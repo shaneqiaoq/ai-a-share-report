@@ -2,6 +2,7 @@
 import os
 import akshare as ak
 import requests
+import pandas as pd
 from dashscope import Generation
 
 # 从环境变量读取密钥（GitHub Secrets 中配置）
@@ -16,41 +17,89 @@ WATCHLIST = {
 }
 
 def get_market_data():
-    """获取大盘指数和热门板块"""
+    """获取大盘指数、资金流热门板块、涨幅榜、跌幅榜"""
     try:
-        sh = ak.stock_zh_index_spot_em(symbol="sh000001")["最新价"].iloc[0]
-        sz = ak.stock_zh_index_spot_em(symbol="sz399001")["最新价"].iloc[0]
-        sectors = ak.stock_sector_fund_flow_rank(indicator="今日")
-        top_sectors = [f"{row['行业']}（{row['涨跌幅']:.2f}%）" for _, row in sectors.head(3).iterrows()]
-        return {"indices": {"上证指数": sh, "深证成指": sz}, "top_sectors": top_sectors}
+        # 大盘指数
+        sh_df = ak.stock_zh_index_spot_em(symbol="sh000001")
+        sz_df = ak.stock_zh_index_spot_em(symbol="sz399001")
+        sh = float(sh_df["最新价"].iloc[0])
+        sz = float(sz_df["最新价"].iloc[0])
+
+        # 资金流热门板块（主力资金流入前3）
+        fund_flow_sectors = ak.stock_sector_fund_flow_rank(indicator="今日")
+        top_fund_sectors = []
+        for _, row in fund_flow_sectors.head(3).iterrows():
+            sector_name = row['行业']
+            change_pct = float(row['涨跌幅'])
+            top_fund_sectors.append(f"{sector_name}（{change_pct:.2f}%）")
+
+        # 所有板块涨跌幅数据
+        all_sectors = ak.stock_sector_spot_em()
+        all_sectors["涨跌幅"] = pd.to_numeric(all_sectors["涨跌幅"], errors="coerce")
+        all_sectors = all_sectors.dropna(subset=["涨跌幅"])
+
+        # 涨幅最大前三
+        top_gain = all_sectors.nlargest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
+        gain_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_gain.iterrows()]
+
+        # 跌幅最大前三
+        top_loss = all_sectors.nsmallest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
+        loss_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_loss.iterrows()]
+
+        return {
+            "indices": {"上证指数": sh, "深证成指": sz},
+            "top_fund_sectors": top_fund_sectors,
+            "top_gain_sectors": gain_list,
+            "top_loss_sectors": loss_list
+        }
     except Exception as e:
         print("数据获取失败:", e)
-        return {"indices": {}, "top_sectors": []}
+        return {
+            "indices": {},
+            "top_fund_sectors": [],
+            "top_gain_sectors": [],
+            "top_loss_sectors": []
+        }
 
 def get_my_stocks():
     """获取自选股票最新行情"""
     stocks = []
     for code, name in WATCHLIST.items():
         try:
-            df = ak.stock_zh_a_hist(symbol=code, period="daily", count=2)
-            today, yesterday = df.iloc[-1], df.iloc[-2]
-            change = (today["收盘"] - yesterday["收盘"]) / yesterday["收盘"] * 100
-            stocks.append({"name": name, "price": today["收盘"], "change": change})
+            df = ak.stock_zh_a_hist(symbol=code, period="daily", limit=2)
+            if len(df) < 2:
+                raise ValueError("历史数据不足")
+            today = df.iloc[-1]
+            yesterday = df.iloc[-2]
+            close_today = float(today["收盘"])
+            close_yest = float(yesterday["收盘"])
+            change = (close_today - close_yest) / close_yest * 100
+            stocks.append({"name": name, "price": close_today, "change": change})
         except Exception as e:
             print(f"{name} 数据异常:", e)
-            stocks.append({"name": name, "price": "N/A", "change": 0})
+            stocks.append({"name": name, "price": None, "change": 0.0})
     return stocks
 
 def generate_ai_summary(market, my_stocks):
     """调用 Qwen-Max 生成七维分析简报"""
-    stock_str = "\n".join([f"- {s['name']}: {s['price']:.2f} ({s['change']:+.2f}%)" for s in my_stocks])
-    sector_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_sectors"])])
-    
+    stock_lines = []
+    for s in my_stocks:
+        if s["price"] is not None:
+            line = f"- {s['name']}: {s['price']:.2f} ({s['change']:+.2f}%)"
+        else:
+            line = f"- {s['name']}: N/A"
+        stock_lines.append(line)
+    stock_str = "\n".join(stock_lines)
+
+    fund_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_fund_sectors"])])
+    gain_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_gain_sectors"])])
+    loss_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_loss_sectors"])])
+
     prompt = f"""
 你是一位资深电力设备与电子元器件行业分析师，请基于以下最新市场数据，围绕【顺络电子（002138）】【中国西电（601179）】【四方股份（601126）】三只股票，生成一份结构清晰、专业简洁的晚间策略简报。
 
 要求：
-- 语言精炼，总字数控制在 200 字以内
+- 语言精炼，总字数控制在 250 字以内
 - 每个板块用「一、二、…」编号，不可省略
 - 不编造数据，仅基于提供信息推理
 
@@ -58,9 +107,14 @@ def generate_ai_summary(market, my_stocks):
 上证: {market['indices'].get('上证指数', 'N/A')}
 深证: {market['indices'].get('深证成指', 'N/A')}
 
-【资金结构】
-热门板块前三：
-{sector_str}
+【资金结构】（主力资金流入前3）
+{fund_str}
+
+【涨幅榜】（全市场板块涨幅前三）
+{gain_str}
+
+【跌幅榜】（全市场板块跌幅前三）
+{loss_str}
 
 【政策扫描】
 近期无新增重大产业政策（默认）
@@ -74,10 +128,10 @@ def generate_ai_summary(market, my_stocks):
 请按以下七点输出：
 一、指数结构  
 二、资金结构  
-三、政策扫描  
-四、行业高频  
-五、持仓专项分析  
-六、技术形态判断  
+三、涨幅与跌幅板块异动  
+四、政策扫描  
+五、行业高频  
+六、持仓专项分析  
 七、明日操作建议
 """
 
@@ -85,7 +139,7 @@ def generate_ai_summary(market, my_stocks):
         model="qwen-max",
         api_key=DASHSCOPE_API_KEY,
         prompt=prompt,
-        temperature=0.3  # 降低随机性，更稳定
+        temperature=0.3
     )
     return resp.output.text.strip() if resp.status_code == 200 else "AI 分析暂不可用。"
 
@@ -113,15 +167,23 @@ def main():
     preview += "📈 大盘\n"
     for k, v in market["indices"].items():
         preview += f"- {k}: {v}\n"
-    preview += "\n🔥 热门板块\n" + "\n".join(f"- {s}" for s in market["top_sectors"])
+    
+    preview += "\n🔥 资金流热门板块\n" + "\n".join(f"- {s}" for s in market["top_fund_sectors"])
+    preview += "\n\n🟢 涨幅最大板块\n" + "\n".join(f"- {s}" for s in market["top_gain_sectors"])
+    preview += "\n\n🔴 跌幅最大板块\n" + "\n".join(f"- {s}" for s in market["top_loss_sectors"])
+    
     preview += "\n\n💼 我的持仓\n"
     for s in my_stocks:
-        sign = "✅" if s["change"] > 0 else "⚠️"
-        preview += f"{sign} {s['name']}: {s['price']:.2f} ({s['change']:+.2f}%)\n"
+        if s["price"] is not None:
+            sign = "✅" if s["change"] > 0 else "⚠️"
+            preview += f"{sign} {s['name']}: {s['price']:.2f} ({s['change']:+.2f}%)\n"
+        else:
+            preview += f"⚠️ {s['name']}: N/A\n"
+    
     preview += f"\n🧠 AI策略\n{ai_summary}"
 
     print("\n--- 预览 ---\n", preview)
-    send_feishu(ai_summary)  # 只推送 AI 总结部分（更简洁）
+    send_feishu(ai_summary)
 
 if __name__ == "__main__":
     main()
