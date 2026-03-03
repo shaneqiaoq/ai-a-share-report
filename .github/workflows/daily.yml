@@ -2,7 +2,7 @@ name: Daily A股晚报
 on:
   schedule:
     - cron: "0 10 * * *"  # 北京时间 18:00
-  workflow_dispatch:      # 允许手动测试
+  workflow_dispatch:
 jobs:
   report:
     runs-on: ubuntu-latest
@@ -11,7 +11,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - run: pip install -r requirements.txt
+      - run: |
+          pip install --upgrade pip
+          pip install akshare==2.0.18 requests dashscope==1.20.0
       - run: python main.py
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
