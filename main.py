@@ -104,7 +104,7 @@ def generate_ai_summary(market, my_stocks):
     gain_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_gain_sectors"])])
     loss_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_loss_sectors"])])
 
-  prompt = f"""
+prompt = f"""
 你是一位资深电力设备与电子元器件行业分析师，请基于以下最新市场数据，围绕【顺络电子（002138）】【中国西电（601179）】【四方股份（601126）】三只股票，生成一份结构清晰、专业简洁的晚间策略简报。
 
 注意：部分数据可能因接口延迟或未更新而缺失，请根据已有信息进行合理推断，不要编造。
@@ -135,7 +135,6 @@ def generate_ai_summary(market, my_stocks):
 
 【持仓专项分析】
 {stock_str}
-"""
 
 请按以下七点输出：
 一、指数结构  
@@ -143,9 +142,7 @@ def generate_ai_summary(market, my_stocks):
 三、涨幅与跌幅板块异动  
 四、政策扫描  
 五、行业高频  
-六、持仓专项分析  
-七、明日操作建议
-"""
+六、持仓专
 
     resp = Generation.call(
         model="qwen-max",
