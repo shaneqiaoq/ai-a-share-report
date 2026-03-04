@@ -148,7 +148,7 @@ prompt = textwrap.dedent(f"""
     七、明日操作建议
 """).strip()
 
-    resp = Generation.call(
+resp = Generation.call(
         model="qwen-max",
         api_key=DASHSCOPE_API_KEY,
         prompt=prompt,
