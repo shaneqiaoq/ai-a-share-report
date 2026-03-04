@@ -154,7 +154,7 @@ resp = Generation.call(
         prompt=prompt,
         temperature=0.3
     )
-    return resp.output.text.strip() if resp.status_code == 200 else "AI 分析暂不可用。"
+return resp.output.text.strip() if resp.status_code == 200 else "AI 分析暂不可用。"
 
 def send_feishu(msg):
     """推送消息到飞书群"""
