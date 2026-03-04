@@ -4,6 +4,7 @@ import akshare as ak
 import requests
 import pandas as pd
 from dashscope import Generation
+import textwrap  # 👈 必须加！否则报错
 
 # 从环境变量读取密钥（GitHub Secrets 中配置）
 FEISHU_WEBHOOK_URL = os.getenv("FEISHU_WEBHOOK_URL")
@@ -103,58 +104,57 @@ def generate_ai_summary(market, my_stocks):
     fund_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_fund_sectors"])])
     gain_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_gain_sectors"])])
     loss_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_loss_sectors"])])
+    
+    prompt = textwrap.dedent(f"""
+        你是一位资深电力设备与电子元器件行业分析师，请基于以下最新市场数据，围绕【顺络电子（002138）】【中国西电（601179）】【四方股份（601126）】三只股票，生成一份结构清晰、专业简洁的晚间策略简报。
 
-import textwrap
+        注意：部分数据可能因接口延迟或未更新而缺失，请根据已有信息进行合理推断，不要编造。
 
-prompt = textwrap.dedent(f"""
-    你是一位资深电力设备与电子元器件行业分析师，请基于以下最新市场数据，围绕【顺络电子（002138）】【中国西电（601179）】【四方股份（601126）】三只股票，生成一份结构清晰、专业简洁的晚间策略简报。
+        要求：
+        - 语言精炼，总字数控制在 250 字以内
+        - 每个板块用「一、二、…」编号，不可省略
+        - 不编造数据，仅基于提供信息推理
 
-    注意：部分数据可能因接口延迟或未更新而缺失，请根据已有信息进行合理推断，不要编造。
+        【指数结构】
+        上证: {market['indices'].get('上证指数', 'N/A')}
+        深证: {market['indices'].get('深证成指', 'N/A')}
 
-    要求：
-    - 语言精炼，总字数控制在 250 字以内
-    - 每个板块用「一、二、…」编号，不可省略
-    - 不编造数据，仅基于提供信息推理
+        【资金结构】（主力资金流入前3）
+        {fund_str}
 
-    【指数结构】
-    上证: {market['indices'].get('上证指数', 'N/A')}
-    深证: {market['indices'].get('深证成指', 'N/A')}
+        【涨幅榜】（全市场板块涨幅前三）
+        {gain_str}
 
-    【资金结构】（主力资金流入前3）
-    {fund_str}
+        【跌幅榜】（全市场板块跌幅前三）
+        {loss_str}
 
-    【涨幅榜】（全市场板块涨幅前三）
-    {gain_str}
+        【政策扫描】
+        近期无新增重大产业政策影响该行业，维持现有策略不变。
 
-    【跌幅榜】（全市场板块跌幅前三）
-    {loss_str}
+        【行业高频】
+        - 电力设备/电子元件板块今日整体表现活跃
 
-    【政策扫描】
-    近期无新增重大产业政策影响该行业，维持现有策略不变。
+        【持仓专项分析】
+        {stock_str}
 
-    【行业高频】
-    - 电力设备/电子元件板块今日整体表现活跃
+        请按以下七点输出：
+        一、指数结构  
+        二、资金结构  
+        三、涨幅与跌幅板块异动  
+        四、政策扫描  
+        五、行业高频  
+        六、持仓专项分析  
+        七、明日操作建议
+    """).strip()
 
-    【持仓专项分析】
-    {stock_str}
-
-    请按以下七点输出：
-    一、指数结构  
-    二、资金结构  
-    三、涨幅与跌幅板块异动  
-    四、政策扫描  
-    五、行业高频  
-    六、持仓专项分析  
-    七、明日操作建议
-""").strip()
-
-resp = Generation.call(
+    resp = Generation.call(
         model="qwen-max",
         api_key=DASHSCOPE_API_KEY,
         prompt=prompt,
         temperature=0.3
     )
-return resp.output.text.strip() if resp.status_code == 200 else "AI 分析暂不可用。"
+    
+    return resp.output.text.strip() if resp.status_code == 200 else "AI 分析暂不可用。"
 
 def send_feishu(msg):
     """推送消息到飞书群"""
