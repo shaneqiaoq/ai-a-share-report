@@ -23,35 +23,40 @@ def get_market_data():
         # 大盘指数
         sh_df = ak.stock_zh_index_spot_em(symbol="sh000001")
         sz_df = ak.stock_zh_index_spot_em(symbol="sz399001")
-        
-        # 安全取值：防止空DataFrame
-        sh = float(sh_df["最新价"].iloc[0]) if not sh_df.empty else "N/A"
-        sz = float(sz_df["最新价"].iloc[0]) if not sz_df.empty else "N/A"
+
+        # 安全取值
+        sh = float(sh_df.get("最新价", 0)) if not sh_df.empty else "N/A"
+        sz = float(sz_df.get("最新价", 0)) if not sz_df.empty else "N/A"
 
         # 资金流热门板块
         fund_flow_sectors = ak.stock_sector_fund_flow_rank(indicator="今日")
         top_fund_sectors = []
-        for _, row in fund_flow_sectors.head(3).iterrows():
-            sector_name = row['行业']
-            change_pct = float(row['涨跌幅'])
-            top_fund_sectors.append(f"{sector_name}（{change_pct:.2f}%）")
+        if not fund_flow_sectors.empty:
+            for _, row in fund_flow_sectors.head(3).iterrows():
+                sector_name = row['行业']
+                change_pct = float(row['涨跌幅'])
+                top_fund_sectors.append(f"{sector_name}（{change_pct:.2f}%）")
 
         # 所有板块涨跌幅数据
         all_sectors = ak.stock_sector_spot_em()
-        all_sectors["涨跌幅"] = pd.to_numeric(all_sectors["涨跌幅"], errors="coerce")
-        all_sectors = all_sectors.dropna(subset=["涨跌幅"])
+        if all_sectors.empty:
+            gain_list = []
+            loss_list = []
+        else:
+            all_sectors["涨跌幅"] = pd.to_numeric(all_sectors["涨跌幅"], errors="coerce")
+            all_sectors = all_sectors.dropna(subset=["涨跌幅"])
+            
+            # 涨幅前三
+            gain_list = []
+            if len(all_sectors) > 0:
+                top_gain = all_sectors.nlargest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
+                gain_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_gain.iterrows()]
 
-        # 涨幅最大前三
-        gain_list = []
-        if len(all_sectors) > 0:
-            top_gain = all_sectors.nlargest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
-            gain_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_gain.iterrows()]
-
-        # 跌幅最大前三
-        loss_list = []
-        if len(all_sectors) > 0:
-            top_loss = all_sectors.nsmallest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
-            loss_list = [f"{row['板块名称']}（{row['着跌']:.2f}%）" for _, row in top_loss.iterrows()]
+            # 跌幅前三
+            loss_list = []
+            if len(all_sectors) > 0:
+                top_loss = all_sectors.nsmallest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
+                loss_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_loss.iterrows()]
 
         return {
             "indices": {"上证指数": sh, "深证成指": sz},
@@ -59,6 +64,7 @@ def get_market_data():
             "top_gain_sectors": gain_list,
             "top_loss_sectors": loss_list
         }
+
     except Exception as e:
         print("数据获取失败:", e)
         return {
