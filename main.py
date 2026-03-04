@@ -22,10 +22,12 @@ def get_market_data():
         # 大盘指数
         sh_df = ak.stock_zh_index_spot_em(symbol="sh000001")
         sz_df = ak.stock_zh_index_spot_em(symbol="sz399001")
-        sh = float(sh_df["最新价"].iloc[0])
-        sz = float(sz_df["最新价"].iloc[0])
+        
+        # 安全取值：防止空DataFrame
+        sh = float(sh_df["最新价"].iloc[0]) if not sh_df.empty else "N/A"
+        sz = float(sz_df["最新价"].iloc[0]) if not sz_df.empty else "N/A"
 
-        # 资金流热门板块（主力资金流入前3）
+        # 资金流热门板块
         fund_flow_sectors = ak.stock_sector_fund_flow_rank(indicator="今日")
         top_fund_sectors = []
         for _, row in fund_flow_sectors.head(3).iterrows():
@@ -39,12 +41,16 @@ def get_market_data():
         all_sectors = all_sectors.dropna(subset=["涨跌幅"])
 
         # 涨幅最大前三
-        top_gain = all_sectors.nlargest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
-        gain_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_gain.iterrows()]
+        gain_list = []
+        if len(all_sectors) > 0:
+            top_gain = all_sectors.nlargest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
+            gain_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_gain.iterrows()]
 
         # 跌幅最大前三
-        top_loss = all_sectors.nsmallest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
-        loss_list = [f"{row['板块名称']}（{row['涨跌幅']:.2f}%）" for _, row in top_loss.iterrows()]
+        loss_list = []
+        if len(all_sectors) > 0:
+            top_loss = all_sectors.nsmallest(3, "涨跌幅")[["板块名称", "涨跌幅"]]
+            loss_list = [f"{row['板块名称']}（{row['着跌']:.2f}%）" for _, row in top_loss.iterrows()]
 
         return {
             "indices": {"上证指数": sh, "深证成指": sz},
@@ -62,7 +68,6 @@ def get_market_data():
         }
 
 def get_my_stocks():
-    """获取自选股票最新行情"""
     stocks = []
     for code, name in WATCHLIST.items():
         try:
@@ -71,6 +76,10 @@ def get_my_stocks():
                 raise ValueError("历史数据不足")
             today = df.iloc[-1]
             yesterday = df.iloc[-2]
+            
+            # 确保字段存在
+            if "收盘" not in today or "收盘" not in yesterday:
+                raise ValueError("缺少'收盘'字段")
             close_today = float(today["收盘"])
             close_yest = float(yesterday["收盘"])
             change = (close_today - close_yest) / close_yest * 100
@@ -95,8 +104,10 @@ def generate_ai_summary(market, my_stocks):
     gain_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_gain_sectors"])])
     loss_str = "\n".join([f"{i+1}. {s}" for i, s in enumerate(market["top_loss_sectors"])])
 
-    prompt = f"""
+  prompt = f"""
 你是一位资深电力设备与电子元器件行业分析师，请基于以下最新市场数据，围绕【顺络电子（002138）】【中国西电（601179）】【四方股份（601126）】三只股票，生成一份结构清晰、专业简洁的晚间策略简报。
+
+注意：部分数据可能因接口延迟或未更新而缺失，请根据已有信息进行合理推断，不要编造。
 
 要求：
 - 语言精炼，总字数控制在 250 字以内
@@ -117,13 +128,14 @@ def generate_ai_summary(market, my_stocks):
 {loss_str}
 
 【政策扫描】
-近期无新增重大产业政策（默认）
+近期无新增重大产业政策影响该行业，维持现有策略不变。
 
 【行业高频】
 - 电力设备/电子元件板块今日整体表现活跃
 
 【持仓专项分析】
 {stock_str}
+"""
 
 请按以下七点输出：
 一、指数结构  
