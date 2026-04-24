@@ -1,23 +1,41 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
-# Read data
+# 1. Load data
 df = pd.read_csv('biomed_data.csv', index_col=0)
+df_t = df.T 
 
-# Transpose data for plotting
-df_t = df.T
+plt.figure(figsize=(12, 7))
 
-# Plotting
-plt.figure(figsize=(10, 6))
+# 2. Loop through each city
+for city in df_t.columns:
+    # Prepare historical data
+    years = df_t.index.astype(int).values.reshape(-1, 1)
+    values = df_t[city].values
 
-for column in df_t.columns:
-    plt.plot(df_t.index, df_t[column], marker='o', label=column)
+    # Plot history (Solid line)
+    plt.plot(years, values, marker='o', label=f'{city} (History)')
 
-plt.title('Biomed Patent Trends (2010-2024)')
-plt.xlabel('Year')
-plt.ylabel('Patent Count')
-plt.legend(title='City')
-plt.grid(True)
+    # Predict next 10 years (2025-2034)
+    model = LinearRegression()
+    model.fit(years, values)
 
-# Save image
-plt.savefig('trend_result.png')
+    future_years = np.array([2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034]).reshape(-1, 1)
+    future_values = model.predict(future_years)
+
+    # Plot prediction (Dashed line)
+    plt.plot(future_years, future_values, linestyle='--', alpha=0.7, label=f'{city} (Prediction)')
+
+# 3. Chart settings
+plt.title('Biomed Patent Trends & 10-Year Prediction', fontsize=15)
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('Patent Count', fontsize=12)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.tight_layout()
+
+# 4. Save image
+plt.savefig('prediction_result.png')
+print("✅ Prediction complete! Image saved as prediction_result.png")
