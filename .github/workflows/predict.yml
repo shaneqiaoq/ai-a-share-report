@@ -3,6 +3,9 @@ name: Run Prediction
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+  
 jobs:
   run-prediction:
     runs-on: ubuntu-latest
